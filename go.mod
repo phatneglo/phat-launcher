@@ -1,3 +1,5 @@
 module launcher
 
-go 1.23.2
+go 1.23.3
+
+require golang.org/x/sys v0.30.0 // indirect

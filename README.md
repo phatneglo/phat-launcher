@@ -1,157 +1,210 @@
-# Custom Protocol Handler Launcher
+# Launcher Application Documentation
 
-A cross-platform application that handles custom URI schemes to open files in specific applications. For example, you can open remote files in Notepad or Photoshop directly from your browser using URIs like `launcher://notepad?url=https://example.com/file.txt`.
+## Overview
+The Launcher is a protocol handler application that manages file associations and opens files with specific applications. It supports custom paths for portable applications and allows custom file type associations.
 
-## Features
+## Quick Start
 
-- Custom URI protocol handler (`launcher://`)
-- Cross-platform support (Windows, macOS, Linux)
-- Automatic file downloading and cleanup
-- Configurable application paths
-- Detailed logging system
-- Support for multiple applications
-
-## Prerequisites
-
-- Go 1.16 or higher
-- Administrator access (for installation)
-- PowerShell (Windows)
-- Supported applications (Notepad, Photoshop, etc.)
-
-## Installation
-
-1. Clone or download the source code
-2. Navigate to the project directory
-3. Build the application:
+1. Download `launcher.exe`
+2. Open command prompt as administrator
+3. Install the protocol handler:
 ```bash
-go build -o launcher
+launcher.exe -install
 ```
 
-4. Install the protocol handler:
-```bash
-# Windows
-.\launcher.exe -install
+## Command Reference
 
-# macOS/Linux
-./launcher -install
+### Installation Commands
+
+```bash
+# Install the protocol handler
+launcher.exe -install
+
+# Uninstall the protocol handler
+launcher.exe -uninstall
 ```
 
-## Configuration
+### Managing Application Paths
 
-The application paths are defined in the `ApplicationPaths` variable. Modify these paths according to your system:
+```bash
+# Set path for portable Photoshop
+launcher.exe -set-path photoshop=D:\PhotoshopPortable\PhotoshopCS6Portable.exe
 
-```go
-var ApplicationPaths = map[string]map[string]string{
-    "windows": {
-        "photoshop": "C:\\Program Files\\Adobe\\Adobe Photoshop CC 2024\\Photoshop.exe",
-        "notepad":   "C:\\Windows\\notepad.exe",
+# Set path for Acrobat
+launcher.exe -set-path acrobat=D:\AcrobatReader\AcrobatDC.exe
+
+# Set path for Microsoft Word
+launcher.exe -set-path word=D:\MSOffice\WINWORD.EXE
+
+# View all custom paths
+launcher.exe -list-paths
+
+# Remove a custom path
+launcher.exe -remove-path photoshop
+```
+
+### Managing File Associations
+
+```bash
+# Associate PDF files with Photoshop
+launcher.exe -set-assoc .pdf=photoshop
+
+# Associate JPG files with Photoshop
+launcher.exe -set-assoc .jpg=photoshop
+
+# Associate DOCX files with Word
+launcher.exe -set-assoc .docx=word
+
+# View all file associations
+launcher.exe -list-assoc
+
+# Remove a file association
+launcher.exe -remove-assoc .pdf
+```
+
+## Real-World Examples
+
+### Example 1: Setting up Portable Photoshop
+
+```bash
+# 1. Set Photoshop path
+launcher.exe -set-path photoshop=D:\PortableApps\PhotoshopCS6\PhotoshopCS6Portable.exe
+
+# 2. Set up file associations
+launcher.exe -set-assoc .jpg=photoshop
+launcher.exe -set-assoc .jpeg=photoshop
+launcher.exe -set-assoc .png=photoshop
+launcher.exe -set-assoc .psd=photoshop
+launcher.exe -set-assoc .pdf=photoshop
+
+# 3. Verify settings
+launcher.exe -list-paths
+launcher.exe -list-assoc
+```
+
+### Example 2: Multiple Application Setup
+
+```bash
+# 1. Set application paths
+launcher.exe -set-path photoshop=D:\PortableApps\PhotoshopCS6\PhotoshopCS6Portable.exe
+launcher.exe -set-path acrobat=D:\PortableApps\AcrobatReader\AcrobatDC.exe
+launcher.exe -set-path word=D:\PortableApps\MSOffice\WINWORD.EXE
+
+# 2. Set file associations
+launcher.exe -set-assoc .pdf=acrobat
+launcher.exe -set-assoc .jpg=photoshop
+launcher.exe -set-assoc .png=photoshop
+launcher.exe -set-assoc .docx=word
+
+# 3. View all settings
+launcher.exe -list-paths
+launcher.exe -list-assoc
+```
+
+### Example 3: Changing Existing Associations
+
+```bash
+# 1. Check current associations
+launcher.exe -list-assoc
+
+# 2. Change PDF from Acrobat to Photoshop
+launcher.exe -set-assoc .pdf=photoshop
+
+# 3. Verify change
+launcher.exe -list-assoc
+```
+
+### Example 4: Complete Reset
+
+```bash
+# 1. Remove all custom paths
+launcher.exe -remove-path photoshop
+launcher.exe -remove-path acrobat
+launcher.exe -remove-path word
+
+# 2. Remove all associations
+launcher.exe -remove-assoc .pdf
+launcher.exe -remove-assoc .jpg
+launcher.exe -remove-assoc .png
+launcher.exe -remove-assoc .docx
+
+# 3. Verify everything is cleared
+launcher.exe -list-paths
+launcher.exe -list-assoc
+
+# 4. Uninstall handler
+launcher.exe -uninstall
+```
+
+## Configuration File
+
+The launcher stores settings in `~/.launcher_config.json`:
+
+```json
+{
+    "customPaths": {
+        "photoshop": "D:\\PortableApps\\PhotoshopCS6\\PhotoshopCS6Portable.exe",
+        "acrobat": "D:\\PortableApps\\AcrobatReader\\AcrobatDC.exe",
+        "word": "D:\\PortableApps\\MSOffice\\WINWORD.EXE"
     },
-    "darwin": {
-        "photoshop": "/Applications/Adobe Photoshop 2024/Adobe Photoshop 2024.app",
-        "notepad":   "/System/Applications/TextEdit.app",
-    },
-    "linux": {
-        "photoshop": "",
-        "notepad":   "gedit",
-    },
+    "customFileAssociations": {
+        ".pdf": "acrobat",
+        ".jpg": "photoshop",
+        ".png": "photoshop",
+        ".docx": "word"
+    }
 }
 ```
 
-## Usage
-
-### Command Line
-
-```bash
-# Install protocol handler
-launcher -install
-
-# Uninstall protocol handler
-launcher -uninstall
-
-# Open a file directly
-launcher -uri "launcher://notepad?url=https://example.com/file.txt"
-```
-
-### Browser Usage
-
-After installation, you can use the launcher protocol in several ways:
-
-1. Click links with the launcher protocol:
-```html
-<a href="launcher://notepad?url=https://example.com/file.txt">Open in Notepad</a>
-```
-
-2. Type in browser address bar:
-```
-launcher://notepad?url=https://example.com/file.txt
-```
-
-3. Use in JavaScript:
-```javascript
-window.location.href = "launcher://photoshop?url=https://example.com/image.jpg";
-```
-
-### Supported Applications
-
-- Notepad (Windows) / TextEdit (macOS) / Gedit (Linux)
-- Adobe Photoshop
-- Add more by updating the `ApplicationPaths` variable
-
-### URI Format
-
-```
-launcher://{application}?url={file_url}
-```
-
-Examples:
-- `launcher://notepad?url=https://raw.githubusercontent.com/golang/go/master/README.md`
-- `launcher://photoshop?url=https://example.com/image.jpg`
-
 ## Logging
 
-Logs are stored in:
-- Windows: `%USERPROFILE%\launcher_logs`
-- macOS/Linux: `~/launcher_logs`
-
-Log files are named by date: `launcher_YYYY-MM-DD.log`
+- Log files are stored in: `~/hrep_launcher_logs/`
+- Format: `launcher_YYYY-MM-DD.log`
+- Contains detailed operation logs for troubleshooting
 
 ## Troubleshooting
 
-1. **Application doesn't open**: 
-   - Check if the application path is correct in `ApplicationPaths`
-   - Verify the application is installed
-   - Check logs for detailed error messages
+### Application Won't Open
 
-2. **Protocol not recognized**:
-   - Reinstall the protocol handler: `launcher -install`
-   - Verify registry entries (Windows) or bundle installation (macOS)
-
-3. **File download fails**:
-   - Verify the URL is accessible
-   - Check network connectivity
-   - Ensure write permissions in temp directory
-
-## Uninstallation
-
+1. Check if path exists:
 ```bash
-# Windows
-.\launcher.exe -uninstall
-
-# macOS/Linux
-./launcher -uninstall
+launcher.exe -list-paths
 ```
 
-## Security Considerations
+2. Try removing and resetting the path:
+```bash
+launcher.exe -remove-path photoshop
+launcher.exe -set-path photoshop=D:\correct\path\to\photoshop.exe
+```
 
-- The application downloads files to a temporary location
-- Files are automatically cleaned up after use
-- Uses HTTPS for secure file downloads
-- Installation is per-user (no admin rights required for usage)
+### Wrong Application Opens
 
-## Contributing
+1. Check current associations:
+```bash
+launcher.exe -list-assoc
+```
 
-Feel free to submit issues, fork the repository, and create pull requests for any improvements.
+2. Remove incorrect association and set correct one:
+```bash
+launcher.exe -remove-assoc .pdf
+launcher.exe -set-assoc .pdf=acrobat
+```
 
-## License
+### Elevation Required
 
-[MIT License](LICENSE)
+If you get "operation requires elevation" error:
+1. Run command prompt as administrator
+2. Reinstall the handler:
+```bash
+launcher.exe -uninstall
+launcher.exe -install
+```
+
+## Supported File Types
+
+Default supported extensions:
+- `.jpg`, `.jpeg`, `.png`, `.psd` (Photoshop)
+- `.pdf` (Acrobat)
+- `.docx` (Word)
+
+You can add custom associations for any extension using `-set-assoc`.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -12,7 +13,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
+
+	"golang.org/x/sys/windows/registry"
 )
 
 const (
@@ -20,19 +24,125 @@ const (
 	version = "1.0.0"
 )
 
-// Set up logging
+// Config stores all user configuration
+type Config struct {
+	CustomPaths            map[string]string `json:"customPaths"`
+	CustomFileAssociations map[string]string `json:"customFileAssociations"`
+}
+
+// ApplicationInfo stores information about applications we want to find
+type ApplicationInfo struct {
+	Name           string
+	WindowsRegKeys []string
+	WindowsExeName string
+	MacAppName     string
+	LinuxBinName   string
+}
+
+// Define applications we want to search for
+var applications = map[string]ApplicationInfo{
+	"word": {
+		Name: "Microsoft Word",
+		WindowsRegKeys: []string{
+			`SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\WINWORD.EXE`,
+			`SOFTWARE\Microsoft\Office\Word\InstallRoot`,
+		},
+		WindowsExeName: "WINWORD.EXE",
+		MacAppName:     "Microsoft Word.app",
+		LinuxBinName:   "libreoffice",
+	},
+	"photoshop": {
+		Name: "Adobe Photoshop",
+		WindowsRegKeys: []string{
+			`SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Photoshop.exe`,
+			`SOFTWARE\Adobe\Photoshop`,
+		},
+		WindowsExeName: "Photoshop.exe",
+		MacAppName:     "Adobe Photoshop 2024.app",
+		LinuxBinName:   "gimp",
+	},
+	"acrobat": {
+		Name: "Adobe Acrobat",
+		WindowsRegKeys: []string{
+			`SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Acrobat.exe`,
+			`SOFTWARE\Adobe\Acrobat`,
+		},
+		WindowsExeName: "Acrobat.exe",
+		MacAppName:     "Adobe Acrobat Reader.app",
+		LinuxBinName:   "evince",
+	},
+}
+
+// ApplicationPaths stores the discovered paths
+var ApplicationPaths map[string]map[string]string
+
 func init() {
-	// Create logs directory in user's home directory
+	ApplicationPaths = buildApplicationMap()
+}
+
+// getConfigPath returns the path to the config file
+func getConfigPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, ".launcher_config.json"), nil
+}
+
+// loadConfig loads configuration from file
+func loadConfig() (Config, error) {
+	config := Config{
+		CustomPaths:            make(map[string]string),
+		CustomFileAssociations: make(map[string]string),
+	}
+
+	configPath, err := getConfigPath()
+	if err != nil {
+		return config, err
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return config, nil
+		}
+		return config, err
+	}
+
+	err = json.Unmarshal(data, &config)
+	if err != nil {
+		return config, err
+	}
+
+	return config, nil
+}
+
+// saveConfig saves configuration to file
+func saveConfig(config Config) error {
+	configPath, err := getConfigPath()
+	if err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(config, "", "    ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(configPath, data, 0644)
+}
+
+func setupLogging() *os.File {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatal("Failed to get home directory:", err)
 	}
-	logDir := filepath.Join(homeDir, "launcher_logs")
+
+	logDir := filepath.Join(homeDir, "hrep_launcher_logs")
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		log.Fatal("Failed to create log directory:", err)
 	}
 
-	// Set up log file
 	logFile := filepath.Join(logDir, fmt.Sprintf("launcher_%s.log", time.Now().Format("2006-01-02")))
 	f, err := os.OpenFile(logFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
@@ -41,152 +151,402 @@ func init() {
 
 	log.SetOutput(f)
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-}
 
-// ApplicationPaths stores the paths to applications for different operating systems
-var ApplicationPaths = map[string]map[string]string{
-	"windows": {
-		"photoshop": "C:\\Program Files\\Adobe\\Adobe Photoshop CC 2024\\Photoshop.exe",
-		"notepad":   "C:\\Windows\\notepad.exe",
-	},
-	"darwin": {
-		"photoshop": "/Applications/Adobe Photoshop 2024/Adobe Photoshop 2024.app",
-		"notepad":   "/System/Applications/TextEdit.app",
-	},
-	"linux": {
-		"photoshop": "",
-		"notepad":   "gedit",
-	},
+	return f
 }
 
 func main() {
-	log.Println("Starting launcher application...")
+	logFile := setupLogging()
+	defer logFile.Close()
 
-	// Parse command line arguments
-	install := flag.Bool("install", false, "Install the URI handler")
-	uninstall := flag.Bool("uninstall", false, "Uninstall the URI handler")
-	uri := flag.String("uri", "", "URI to handle")
+	installFlag := flag.Bool("install", false, "Install URI handler")
+	uninstallFlag := flag.Bool("uninstall", false, "Uninstall URI handler")
+	uriFlag := flag.String("uri", "", "URI to process")
+	setPathFlag := flag.String("set-path", "", "Set custom path for an application (format: app=path)")
+	listPathsFlag := flag.Bool("list-paths", false, "List all custom paths")
+	removePathFlag := flag.String("remove-path", "", "Remove custom path for an application")
+	setAssocFlag := flag.String("set-assoc", "", "Set custom file association (format: ext=app)")
+	listAssocFlag := flag.Bool("list-assoc", false, "List all custom file associations")
+	removeAssocFlag := flag.String("remove-assoc", "", "Remove custom file association for an extension")
+
 	flag.Parse()
 
-	// If no flags are provided, check for URI in remaining arguments
-	// This handles the case when Windows calls the program with the URI directly
-	if !*install && !*uninstall && *uri == "" && len(flag.Args()) > 0 {
-		*uri = strings.TrimPrefix(flag.Args()[0], "launcher://")
+	// Load existing config
+	config, err := loadConfig()
+	if err != nil {
+		config = Config{
+			CustomPaths:            make(map[string]string),
+			CustomFileAssociations: make(map[string]string),
+		}
 	}
 
-	log.Printf("Arguments: install=%v, uninstall=%v, uri=%s", *install, *uninstall, *uri)
+	uri := *uriFlag
+	if uri == "" && len(flag.Args()) > 0 {
+		uri = strings.TrimPrefix(flag.Args()[0], "launcher://")
+	}
 
-	if *install {
+	log.Printf("Launcher started. Install: %v, Uninstall: %v, URI: %s",
+		*installFlag, *uninstallFlag, uri)
+
+	switch {
+	case *setPathFlag != "":
+		parts := strings.SplitN(*setPathFlag, "=", 2)
+		if len(parts) != 2 {
+			log.Fatal("Invalid format for set-path. Use: -set-path app=path")
+		}
+		app, path := parts[0], parts[1]
+		config.CustomPaths[app] = path
+		if err := saveConfig(config); err != nil {
+			log.Fatalf("Failed to save config: %v", err)
+		}
+		fmt.Printf("Custom path for %s set to: %s\n", app, path)
+		// Rebuild application paths
+		ApplicationPaths = buildApplicationMap()
+
+	case *setAssocFlag != "":
+		parts := strings.SplitN(*setAssocFlag, "=", 2)
+		if len(parts) != 2 {
+			log.Fatal("Invalid format for set-assoc. Use: -set-assoc .ext=app")
+		}
+		ext, app := parts[0], parts[1]
+		if !strings.HasPrefix(ext, ".") {
+			ext = "." + ext
+		}
+		config.CustomFileAssociations[ext] = app
+		if err := saveConfig(config); err != nil {
+			log.Fatalf("Failed to save config: %v", err)
+		}
+		fmt.Printf("Custom association for %s set to: %s\n", ext, app)
+		// Rebuild application paths
+		ApplicationPaths = buildApplicationMap()
+
+	case *listPathsFlag:
+		fmt.Println("Custom application paths:")
+		for app, path := range config.CustomPaths {
+			fmt.Printf("%s: %s\n", app, path)
+		}
+
+	case *listAssocFlag:
+		fmt.Println("Custom file associations:")
+		for ext, app := range config.CustomFileAssociations {
+			fmt.Printf("%s -> %s\n", ext, app)
+		}
+
+	case *removePathFlag != "":
+		delete(config.CustomPaths, *removePathFlag)
+		if err := saveConfig(config); err != nil {
+			log.Fatalf("Failed to save config: %v", err)
+		}
+		fmt.Printf("Removed custom path for: %s\n", *removePathFlag)
+		// Rebuild application paths
+		ApplicationPaths = buildApplicationMap()
+
+	case *removeAssocFlag != "":
+		ext := *removeAssocFlag
+		if !strings.HasPrefix(ext, ".") {
+			ext = "." + ext
+		}
+		delete(config.CustomFileAssociations, ext)
+		if err := saveConfig(config); err != nil {
+			log.Fatalf("Failed to save config: %v", err)
+		}
+		fmt.Printf("Removed custom association for: %s\n", ext)
+		// Rebuild application paths
+		ApplicationPaths = buildApplicationMap()
+
+	case *installFlag:
 		if err := installHandler(); err != nil {
-			log.Fatal("Installation failed:", err)
+			log.Fatalf("Installation failed: %v", err)
 		}
-		fmt.Println("URI handler installed successfully!")
-		time.Sleep(2 * time.Second) // Give user time to read message
-	} else if *uninstall {
+		fmt.Println("URI handler installed successfully")
+
+	case *uninstallFlag:
 		if err := uninstallHandler(); err != nil {
-			log.Fatal("Uninstallation failed:", err)
+			log.Fatalf("Uninstallation failed: %v", err)
 		}
-		fmt.Println("URI handler uninstalled successfully!")
-		time.Sleep(2 * time.Second)
-	} else if *uri != "" {
-		if err := handleURI(*uri); err != nil {
-			log.Printf("Error handling URI: %v", err)
-			time.Sleep(5 * time.Second) // Keep error message visible
-			os.Exit(1)
+		fmt.Println("URI handler uninstalled successfully")
+
+	case uri != "":
+		if err := processURI(uri); err != nil {
+			log.Fatalf("URI processing failed: %v", err)
 		}
-	} else {
+
+	default:
 		flag.Usage()
-		time.Sleep(2 * time.Second)
 	}
 }
 
-func handleURI(rawURI string) error {
-	log.Printf("Handling URI: %s", rawURI)
+func findApplicationPaths() map[string]string {
+	paths := make(map[string]string)
 
-	// If URI doesn't start with launcher://, add it
-	if !strings.HasPrefix(rawURI, "launcher://") {
-		rawURI = "launcher://" + rawURI
+	// Load custom paths first
+	config, err := loadConfig()
+	if err == nil {
+		for app, path := range config.CustomPaths {
+			if fileExists(path) {
+				paths[app] = path
+				log.Printf("Loaded custom path for %s: %s", app, path)
+			}
+		}
 	}
 
-	// Parse the URI
-	parsedURI, err := url.Parse(rawURI)
+	// Then load system paths for apps that don't have custom paths
+	switch runtime.GOOS {
+	case "windows":
+		systemPaths := findWindowsApplications()
+		for app, path := range systemPaths {
+			if _, exists := paths[app]; !exists {
+				paths[app] = path
+			}
+		}
+	case "darwin":
+		systemPaths := findMacApplications()
+		for app, path := range systemPaths {
+			if _, exists := paths[app]; !exists {
+				paths[app] = path
+			}
+		}
+	case "linux":
+		systemPaths := findLinuxApplications()
+		for app, path := range systemPaths {
+			if _, exists := paths[app]; !exists {
+				paths[app] = path
+			}
+		}
+	}
+
+	return paths
+}
+
+func findWindowsApplications() map[string]string {
+	paths := make(map[string]string)
+
+	for appKey, appInfo := range applications {
+		for _, regKey := range appInfo.WindowsRegKeys {
+			if path := findWindowsAppPath(regKey, appInfo.WindowsExeName); path != "" {
+				paths[appKey] = path
+				break
+			}
+		}
+
+		if paths[appKey] == "" {
+			commonDirs := []string{
+				`C:\Program Files`,
+				`C:\Program Files (x86)`,
+			}
+
+			for _, dir := range commonDirs {
+				if path := findWindowsAppInDir(dir, appInfo.WindowsExeName); path != "" {
+					paths[appKey] = path
+					break
+				}
+			}
+		}
+	}
+
+	return paths
+}
+
+func findWindowsAppPath(regKeyPath, exeName string) string {
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE, regKeyPath, registry.READ)
 	if err != nil {
-		return fmt.Errorf("failed to parse URI: %w", err)
+		return ""
+	}
+	defer key.Close()
+
+	path, _, err := key.GetStringValue("Path")
+	if err == nil && path != "" {
+		fullPath := filepath.Join(path, exeName)
+		if fileExists(fullPath) {
+			return fullPath
+		}
 	}
 
-	// Extract the application name and URL
-	appName := strings.TrimPrefix(parsedURI.Host, "launcher://")
-	fileURL := parsedURI.Query().Get("url")
+	return ""
+}
 
-	log.Printf("Application: %s, URL: %s", appName, fileURL)
+func findWindowsAppInDir(rootDir, exeName string) string {
+	var foundPath string
+	filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return filepath.SkipDir
+		}
+		if info.Name() == exeName {
+			foundPath = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return foundPath
+}
 
-	if fileURL == "" {
-		return fmt.Errorf("no URL provided in the URI")
+func findMacApplications() map[string]string {
+	paths := make(map[string]string)
+
+	appDirs := []string{
+		"/Applications",
+		fmt.Sprintf("/Users/%s/Applications", os.Getenv("USER")),
 	}
 
-	// Download the file
+	for appKey, appInfo := range applications {
+		for _, dir := range appDirs {
+			path := filepath.Join(dir, appInfo.MacAppName)
+			if fileExists(path) {
+				paths[appKey] = path
+				break
+			}
+		}
+	}
+
+	return paths
+}
+
+func findLinuxApplications() map[string]string {
+	paths := make(map[string]string)
+
+	binDirs := []string{
+		"/usr/bin",
+		"/usr/local/bin",
+		"/opt",
+	}
+
+	for appKey, appInfo := range applications {
+		for _, dir := range binDirs {
+			path := filepath.Join(dir, appInfo.LinuxBinName)
+			if fileExists(path) {
+				paths[appKey] = path
+				break
+			}
+		}
+	}
+
+	return paths
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func processURI(rawURI string) error {
+	log.Printf("Processing URI: %s", rawURI)
+
+	parts := strings.SplitN(rawURI, "?url=", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid URI format")
+	}
+
+	fileURL := parts[1]
+	log.Printf("Full download URL: %s", fileURL)
+
 	tempFile, err := downloadFile(fileURL)
 	if err != nil {
-		return fmt.Errorf("failed to download file: %w", err)
+		return fmt.Errorf("download failed: %w", err)
 	}
 
-	// Launch application and wait for it to finish
-	err = launchAndWait(appName, tempFile)
+	err = openFileWithApp(tempFile)
+	if err != nil {
+		os.Remove(tempFile)
+		return err
+	}
 
-	// Clean up temp file after application closes
-	os.Remove(tempFile)
-
-	return err
+	return nil
 }
 
-func launchAndWait(appName, filePath string) error {
-	os := runtime.GOOS
-	appPaths, ok := ApplicationPaths[os]
-	if !ok {
-		return fmt.Errorf("unsupported operating system: %s", os)
+func downloadFile(fileURL string) (string, error) {
+	client := &http.Client{}
+
+	req, err := http.NewRequest("GET", fileURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	appPath, ok := appPaths[appName]
-	if !ok {
-		return fmt.Errorf("unknown application: %s", appName)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download failed with status: %s", resp.Status)
+	}
+
+	parsedURL, err := url.Parse(fileURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL: %w", err)
+	}
+	ext := filepath.Ext(parsedURL.Path)
+
+	tempFile, err := os.CreateTemp("", fmt.Sprintf("hrep-launcher-*%s", ext))
+	if err != nil {
+		return "", fmt.Errorf("temp file creation failed: %w", err)
+	}
+	defer tempFile.Close()
+
+	_, err = io.Copy(tempFile, resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("file write failed: %w", err)
+	}
+
+	return tempFile.Name(), nil
+}
+
+func openFileWithApp(filePath string) error {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	os := runtime.GOOS
+
+	appPath, exists := ApplicationPaths[os][ext]
+	if !exists {
+		return openWithDefaultApp(filePath)
 	}
 
 	var cmd *exec.Cmd
 	switch os {
 	case "windows":
+		// Try to execute directly first
 		cmd = exec.Command(appPath, filePath)
+		err := cmd.Start()
+		if err != nil {
+			if strings.Contains(err.Error(), "requires elevation") {
+				// If elevation is required, use 'runas' verb with ShellExecute
+				cmd = exec.Command("cmd", "/c", "start", "/wait", "", appPath, filePath)
+				cmd.SysProcAttr = &syscall.SysProcAttr{
+					HideWindow:    true,
+					CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+				}
+			} else {
+				return err
+			}
+		} else {
+			return nil
+		}
 	case "darwin":
-		cmd = exec.Command("open", "-W", "-a", appPath, filePath)
+		cmd = exec.Command("open", "-a", appPath, filePath)
 	case "linux":
 		cmd = exec.Command(appPath, filePath)
+	default:
+		return fmt.Errorf("unsupported OS: %s", os)
 	}
 
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start application: %w", err)
-	}
-
-	return cmd.Wait()
+	log.Printf("Executing command: %v with file: %s", cmd.Path, filePath)
+	return cmd.Start()
 }
 
-func downloadFile(fileURL string) (string, error) {
-	tempFile, err := os.CreateTemp("", "launcher-*"+filepath.Ext(fileURL))
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer tempFile.Close()
+func openWithDefaultApp(filePath string) error {
+	var cmd *exec.Cmd
 
-	resp, err := http.Get(fileURL)
-	if err != nil {
-		return "", fmt.Errorf("failed to download file: %w", err)
-	}
-	defer resp.Body.Close()
-
-	_, err = io.Copy(tempFile, resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to save file: %w", err)
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", "", filePath)
+	case "darwin":
+		cmd = exec.Command("open", filePath)
+	case "linux":
+		cmd = exec.Command("xdg-open", filePath)
+	default:
+		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 	}
 
-	return tempFile.Name(), nil
+	return cmd.Start()
 }
 
 func installHandler() error {
@@ -219,14 +579,19 @@ Set-ItemProperty -Path $RegKey -Name "(Default)" -Value "URL:Launcher Protocol"
 Set-ItemProperty -Path $RegKey -Name "URL Protocol" -Value ""
 New-Item -Path "$RegKey\shell\open\command" -Force
 Set-ItemProperty -Path "$RegKey\shell\open\command" -Name "(Default)" -Value '"%s" "%%1"'
-`, execPath)
+
+# Add runas verb for elevation when needed
+New-Item -Path "$RegKey\shell\runas" -Force
+Set-ItemProperty -Path "$RegKey\shell\runas" -Name "(Default)" -Value "Run as administrator"
+New-Item -Path "$RegKey\shell\runas\command" -Force
+Set-ItemProperty -Path "$RegKey\shell\runas\command" -Name "(Default)" -Value '"%s" "%%1"'
+`, execPath, execPath)
 
 	cmd := exec.Command("powershell", "-Command", regScript)
 	return cmd.Run()
 }
 
 func installMacOS(execPath string) error {
-	// Create app bundle directory
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -236,7 +601,6 @@ func installMacOS(execPath string) error {
 	contentsDir := filepath.Join(appDir, "Contents")
 	macOSDir := filepath.Join(contentsDir, "MacOS")
 
-	// Create directory structure
 	dirs := []string{appDir, contentsDir, macOSDir}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -244,7 +608,6 @@ func installMacOS(execPath string) error {
 		}
 	}
 
-	// Create Info.plist
 	infoPlist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -277,18 +640,15 @@ func installMacOS(execPath string) error {
 		return err
 	}
 
-	// Copy executable to MacOS directory
 	binaryPath := filepath.Join(macOSDir, "launcher")
 	if err := copyFile(execPath, binaryPath); err != nil {
 		return err
 	}
 
-	// Make binary executable
 	return os.Chmod(binaryPath, 0755)
 }
 
 func installLinux(execPath string) error {
-	// Create desktop entry
 	desktopEntry := fmt.Sprintf(`[Desktop Entry]
 Name=Launcher
 Exec=%s -uri %%u
@@ -297,7 +657,6 @@ Terminal=false
 MimeType=x-scheme-handler/launcher;
 `, execPath)
 
-	// Save desktop entry
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -312,7 +671,6 @@ MimeType=x-scheme-handler/launcher;
 		return err
 	}
 
-	// Register mime type
 	cmd := exec.Command("xdg-mime", "default", "launcher.desktop", "x-scheme-handler/launcher")
 	return cmd.Run()
 }
@@ -357,4 +715,45 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return os.WriteFile(dst, input, 0644)
+}
+
+func buildApplicationMap() map[string]map[string]string {
+	appPaths := findApplicationPaths()
+	extMap := make(map[string]map[string]string)
+
+	// Load custom file associations
+	config, err := loadConfig()
+	if err == nil {
+		for _, os := range []string{"windows", "darwin", "linux"} {
+			extMap[os] = make(map[string]string)
+
+			// Apply custom file associations first
+			for ext, app := range config.CustomFileAssociations {
+				if path, ok := appPaths[app]; ok {
+					extMap[os][ext] = path
+				}
+			}
+
+			// Then apply default associations for extensions that don't have custom ones
+			if path, ok := appPaths["word"]; ok {
+				if _, exists := extMap[os][".docx"]; !exists {
+					extMap[os][".docx"] = path
+				}
+			}
+			if path, ok := appPaths["photoshop"]; ok {
+				for _, ext := range []string{".jpg", ".jpeg", ".png", ".psd"} {
+					if _, exists := extMap[os][ext]; !exists {
+						extMap[os][ext] = path
+					}
+				}
+			}
+			if path, ok := appPaths["acrobat"]; ok {
+				if _, exists := extMap[os][".pdf"]; !exists {
+					extMap[os][".pdf"] = path
+				}
+			}
+		}
+	}
+
+	return extMap
 }
