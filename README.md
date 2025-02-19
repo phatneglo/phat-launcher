@@ -14,8 +14,8 @@ A protocol handler application that allows opening files with specific applicati
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/phatneglo/phat-launcher.git
-cd phat-launcher
+git clone https://github.com/phatneglo/phat-launcher.git HREP_GO
+cd HREP_GO
 ```
 
 2. Switch to the hrep_go branch:
@@ -23,17 +23,7 @@ cd phat-launcher
 git checkout hrep_go
 ```
 
-### Option 2: Manual Setup
-
-If you prefer to set up the project manually:
-
-1. Create a new directory for your project:
-```bash
-mkdir launcher
-cd launcher
-```
-
-2. Create a go.mod file with the following content:
+3. Create a go.mod file with the following content:
 ```go
 module launcher
 
@@ -47,21 +37,23 @@ require (
 )
 ```
 
-3. Run go mod tidy to ensure all dependencies are properly synchronized:
+4. Run go mod tidy to ensure all dependencies are properly synchronized:
 ```bash
 go mod tidy
 ```
 
 ## Project Structure
 
-Create the following files in your project directory:
+Your project structure should look like this:
 
 ```
 launcher/
+├── .gitignore
 ├── main.go
 ├── core.go
 ├── go.mod
 ├── go.sum
+├── Launcher GUI User Guide.md
 └── README.md
 ```
 
