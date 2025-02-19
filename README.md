@@ -75,7 +75,7 @@ chmod +x launcher
 
 ## Running the application
 
-After building the application, you can check [Launcher GUI User Guide.md](Launcher%20GUI%20User%20Guide.md) on how to use the application
+After building the application, you can check [Launcher GUI User Guide](Launcher%20GUI%20User%20Guide.md) on how to use and install the application
 
 ## Usage
 
