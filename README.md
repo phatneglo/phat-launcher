@@ -1,210 +1,221 @@
-# Launcher Application Documentation
+# Launcher Application
 
-## Overview
-The Launcher is a protocol handler application that manages file associations and opens files with specific applications. It supports custom paths for portable applications and allows custom file type associations.
+A protocol handler application that allows opening files with specific applications based on file extensions.
 
-## Quick Start
+## Prerequisites
 
-1. Download `launcher.exe`
-2. Open command prompt as administrator
-3. Install the protocol handler:
+- Go 1.23.3 or higher
+- Windows, macOS, or Linux operating system
+- Git (for cloning the repository)
+
+## Project Setup
+
+### Option 1: Clone from GitHub
+
+1. Clone the repository:
 ```bash
+git clone https://github.com/phatneglo/phat-launcher.git
+cd phat-launcher
+```
+
+2. Switch to the hrep_go branch:
+```bash
+git checkout hrep_go
+```
+
+### Option 2: Manual Setup
+
+If you prefer to set up the project manually:
+
+1. Create a new directory for your project:
+```bash
+mkdir launcher
+cd launcher
+```
+
+2. Create a go.mod file with the following content:
+```go
+module launcher
+
+go 1.23.3
+
+require github.com/jchv/go-webview2 v0.0.0-20221223143126-dc24628cff85
+
+require (
+    github.com/jchv/go-winloader v0.0.0-20200815041850-dec1ee9a7fd5 // indirect
+    golang.org/x/sys v0.30.0 // indirect
+)
+```
+
+3. Run go mod tidy to ensure all dependencies are properly synchronized:
+```bash
+go mod tidy
+```
+
+## Project Structure
+
+Create the following files in your project directory:
+
+```
+launcher/
+├── main.go
+├── core.go
+├── go.mod
+├── go.sum
+└── README.md
+```
+
+## Building the Application
+
+### Windows
+```bash
+go build -ldflags="-H windowsgui" -o launcher.exe
+```
+The `-H windowsgui` flag prevents the command prompt window from appearing when running the GUI application.
+
+### macOS
+```bash
+go build -o launcher
+```
+On macOS, the application will run as a GUI application by default.
+
+### Linux
+```bash
+go build -o launcher
+```
+On Linux, you might want to add the executable flag after building:
+```bash
+chmod +x launcher
+```
+
+## Installation
+
+After building the application, you can install the protocol handler:
+
+```bash
+# Windows
 launcher.exe -install
+
+# macOS/Linux
+./launcher -install
 ```
 
-## Command Reference
+## Configuration
 
-### Installation Commands
+The launcher can be configured either through the GUI or command line interface.
 
+### GUI Configuration
+Simply run the launcher without any arguments to open the configuration interface:
 ```bash
-# Install the protocol handler
-launcher.exe -install
-
-# Uninstall the protocol handler
-launcher.exe -uninstall
+launcher.exe
 ```
 
-### Managing Application Paths
+### CLI Configuration
 
+Set custom application paths:
 ```bash
-# Set path for portable Photoshop
-launcher.exe -set-path photoshop=D:\PhotoshopPortable\PhotoshopCS6Portable.exe
-
-# Set path for Acrobat
-launcher.exe -set-path acrobat=D:\AcrobatReader\AcrobatDC.exe
-
-# Set path for Microsoft Word
-launcher.exe -set-path word=D:\MSOffice\WINWORD.EXE
-
-# View all custom paths
-launcher.exe -list-paths
-
-# Remove a custom path
-launcher.exe -remove-path photoshop
+launcher -set-path "app=C:\Path\To\App.exe"
 ```
 
-### Managing File Associations
-
+Set file associations:
 ```bash
-# Associate PDF files with Photoshop
-launcher.exe -set-assoc .pdf=photoshop
-
-# Associate JPG files with Photoshop
-launcher.exe -set-assoc .jpg=photoshop
-
-# Associate DOCX files with Word
-launcher.exe -set-assoc .docx=word
-
-# View all file associations
-launcher.exe -list-assoc
-
-# Remove a file association
-launcher.exe -remove-assoc .pdf
+launcher -set-assoc ".pdf=acrobat"
 ```
 
-## Real-World Examples
-
-### Example 1: Setting up Portable Photoshop
-
+List current configurations:
 ```bash
-# 1. Set Photoshop path
-launcher.exe -set-path photoshop=D:\PortableApps\PhotoshopCS6\PhotoshopCS6Portable.exe
-
-# 2. Set up file associations
-launcher.exe -set-assoc .jpg=photoshop
-launcher.exe -set-assoc .jpeg=photoshop
-launcher.exe -set-assoc .png=photoshop
-launcher.exe -set-assoc .psd=photoshop
-launcher.exe -set-assoc .pdf=photoshop
-
-# 3. Verify settings
-launcher.exe -list-paths
-launcher.exe -list-assoc
+launcher -list-paths
+launcher -list-assoc
 ```
 
-### Example 2: Multiple Application Setup
+## Usage
 
-```bash
-# 1. Set application paths
-launcher.exe -set-path photoshop=D:\PortableApps\PhotoshopCS6\PhotoshopCS6Portable.exe
-launcher.exe -set-path acrobat=D:\PortableApps\AcrobatReader\AcrobatDC.exe
-launcher.exe -set-path word=D:\PortableApps\MSOffice\WINWORD.EXE
-
-# 2. Set file associations
-launcher.exe -set-assoc .pdf=acrobat
-launcher.exe -set-assoc .jpg=photoshop
-launcher.exe -set-assoc .png=photoshop
-launcher.exe -set-assoc .docx=word
-
-# 3. View all settings
-launcher.exe -list-paths
-launcher.exe -list-assoc
+Once installed and configured, the launcher can handle URLs with the following format:
+```
+launcher://open?url=https://example.com/path/to/file.pdf
 ```
 
-### Example 3: Changing Existing Associations
+## Command Line Options
 
-```bash
-# 1. Check current associations
-launcher.exe -list-assoc
-
-# 2. Change PDF from Acrobat to Photoshop
-launcher.exe -set-assoc .pdf=photoshop
-
-# 3. Verify change
-launcher.exe -list-assoc
+```
+-cli           Run in CLI mode
+-install       Install URI handler
+-uninstall     Uninstall URI handler
+-uri           URI to process
+-set-path      Set custom path for an application (format: app=path)
+-list-paths    List all custom paths
+-remove-path   Remove custom path for an application
+-set-assoc     Set custom file association (format: ext=app)
+-list-assoc    List all custom file associations
+-remove-assoc  Remove custom file association for an extension
 ```
 
-### Example 4: Complete Reset
+## Development
 
-```bash
-# 1. Remove all custom paths
-launcher.exe -remove-path photoshop
-launcher.exe -remove-path acrobat
-launcher.exe -remove-path word
+### Project Files Overview
 
-# 2. Remove all associations
-launcher.exe -remove-assoc .pdf
-launcher.exe -remove-assoc .jpg
-launcher.exe -remove-assoc .png
-launcher.exe -remove-assoc .docx
+- `main.go`: Contains the main application logic, GUI implementation, and CLI handling
+- `core.go`: Contains core functionality for handling file operations, configurations, and protocol handling
 
-# 3. Verify everything is cleared
-launcher.exe -list-paths
-launcher.exe -list-assoc
+### Adding New Features
 
-# 4. Uninstall handler
-launcher.exe -uninstall
-```
-
-## Configuration File
-
-The launcher stores settings in `~/.launcher_config.json`:
-
-```json
-{
-    "customPaths": {
-        "photoshop": "D:\\PortableApps\\PhotoshopCS6\\PhotoshopCS6Portable.exe",
-        "acrobat": "D:\\PortableApps\\AcrobatReader\\AcrobatDC.exe",
-        "word": "D:\\PortableApps\\MSOffice\\WINWORD.EXE"
-    },
-    "customFileAssociations": {
-        ".pdf": "acrobat",
-        ".jpg": "photoshop",
-        ".png": "photoshop",
-        ".docx": "word"
-    }
-}
-```
-
-## Logging
-
-- Log files are stored in: `~/hrep_launcher_logs/`
-- Format: `launcher_YYYY-MM-DD.log`
-- Contains detailed operation logs for troubleshooting
+To add support for new file types:
+1. Add the file extension to the `buildApplicationMap` function in `core.go`
+2. Configure the application path using the GUI or CLI
+3. Test the new file association
 
 ## Troubleshooting
 
-### Application Won't Open
+### Common Issues
 
-1. Check if path exists:
-```bash
-launcher.exe -list-paths
-```
+1. **WebView2 Runtime Requirements**
 
-2. Try removing and resetting the path:
-```bash
-launcher.exe -remove-path photoshop
-launcher.exe -set-path photoshop=D:\correct\path\to\photoshop.exe
-```
+   a. **Check WebView2 Installation**
+   - Open Windows Registry Editor (regedit)
+   - Navigate to: `HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`
+   - If this key exists, WebView2 Runtime is installed
+   - Alternatively, check `C:\Program Files (x86)\Microsoft\EdgeWebView\Application` for installation files
 
-### Wrong Application Opens
+   b. **Install WebView2 Runtime**
+   - Download the WebView2 Evergreen Bootstrapper from: https://developer.microsoft.com/en-us/microsoft-edge/webview2/
+   - Choose "Evergreen Bootstrapper" (not the fixed version)
+   - Direct download link: https://go.microsoft.com/fwlink/p/?LinkId=2124703
+   - Run installer with administrator privileges
+   - The bootstrapper will automatically install the correct version for your system
 
-1. Check current associations:
-```bash
-launcher.exe -list-assoc
-```
+   c. **System Requirements**
+   - Windows 10 version 1803 (OS Build 17134) or later
+   - Windows 11
+   - Windows Server 2019 or later
+   - x86, x64, or ARM64 processor architecture
 
-2. Remove incorrect association and set correct one:
-```bash
-launcher.exe -remove-assoc .pdf
-launcher.exe -set-assoc .pdf=acrobat
-```
+   d. **Dependencies Check**
+   - Microsoft Visual C++ Redistributable required
+   - .NET Framework 4.6.2 or later recommended
+   - Check Windows Updates are current
 
-### Elevation Required
+   e. **Troubleshooting Installation**
+   - Run `PowerShell` as administrator
+   - Check version: 
+     ```powershell
+     Get-ItemProperty -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -Name pv
+     ```
+   - If installation fails, try:
+     1. Uninstall existing WebView2 Runtime
+     2. Clear temp files in `%TEMP%`
+     3. Restart computer
+     4. Install Evergreen Bootstrapper again with admin rights
 
-If you get "operation requires elevation" error:
-1. Run command prompt as administrator
-2. Reinstall the handler:
-```bash
-launcher.exe -uninstall
-launcher.exe -install
-```
+2. **Permission Issues**
+   - On Windows, run with administrator privileges for installation
+   - On Linux/macOS, ensure proper file permissions
 
-## Supported File Types
+3. **Configuration Not Saving**
+   - Check write permissions in the user's home directory
+   - Verify the config file location (~/.launcher_config.json)
 
-Default supported extensions:
-- `.jpg`, `.jpeg`, `.png`, `.psd` (Photoshop)
-- `.pdf` (Acrobat)
-- `.docx` (Word)
+### Logs
 
-You can add custom associations for any extension using `-set-assoc`.
+Logs are stored in:
+- Windows: `%USERPROFILE%\hrep_launcher_logs`
+- macOS/Linux: `~/hrep_launcher_logs`
