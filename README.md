@@ -10,8 +10,6 @@ A protocol handler application that allows opening files with specific applicati
 
 ## Project Setup
 
-### Option 1: Clone from GitHub
-
 1. Clone the repository:
 ```bash
 git clone https://github.com/phatneglo/phat-launcher.git HREP_GO
@@ -23,18 +21,13 @@ cd HREP_GO
 git checkout hrep_go
 ```
 
-3. Create a go.mod file with the following content:
-```go
-module launcher
+3. Initialize go module and get dependencies:
+```bash
+# Initialize the module
+go mod init launcher
 
-go 1.23.3
-
-require github.com/jchv/go-webview2 v0.0.0-20221223143126-dc24628cff85
-
-require (
-    github.com/jchv/go-winloader v0.0.0-20200815041850-dec1ee9a7fd5 // indirect
-    golang.org/x/sys v0.30.0 // indirect
-)
+# Get required dependencies
+go get github.com/jchv/go-webview2@v0.0.0-20221223143126-dc24628cff85
 ```
 
 4. Run go mod tidy to ensure all dependencies are properly synchronized:
@@ -49,11 +42,11 @@ Your project structure should look like this:
 ```
 launcher/
 ├── .gitignore
-├── main.go
 ├── core.go
 ├── go.mod
 ├── go.sum
 ├── Launcher GUI User Guide.md
+├── main.go
 └── README.md
 ```
 
@@ -80,51 +73,20 @@ On Linux, you might want to add the executable flag after building:
 chmod +x launcher
 ```
 
-## Installation
+## Running the application
 
-After building the application, you can install the protocol handler:
-
-```bash
-# Windows
-launcher.exe -install
-
-# macOS/Linux
-./launcher -install
-```
-
-## Configuration
-
-The launcher can be configured either through the GUI or command line interface.
-
-### GUI Configuration
-Simply run the launcher without any arguments to open the configuration interface:
-```bash
-launcher.exe
-```
-
-### CLI Configuration
-
-Set custom application paths:
-```bash
-launcher -set-path "app=C:\Path\To\App.exe"
-```
-
-Set file associations:
-```bash
-launcher -set-assoc ".pdf=acrobat"
-```
-
-List current configurations:
-```bash
-launcher -list-paths
-launcher -list-assoc
-```
+After building the application, you can check [Launcher GUI User Guide.md](Launcher%20GUI%20User%20Guide.md) on how to use the application
 
 ## Usage
 
 Once installed and configured, the launcher can handle URLs with the following format:
 ```
-launcher://open?url=https://example.com/path/to/file.pdf
+launcher://?url=https://example.com/path/to/file.pdf
+```
+
+You can use this on html like this:
+```html
+   <a href="launcher://?url=https://example.com/path/to/file.pdf">Open File</a>
 ```
 
 ## Command Line Options
